@@ -104,8 +104,6 @@ def setup_sqlite(filename='./data.sqlite'):
             FOREIGN KEY(id_forum) REFERENCES forums(id)
         );
         
-        INSERT INTO posts VALUES (1, 15, '2010-02-01 12:12:12', 'bill', 'stuff for sale', 'blagh');
-    
     ''')
 
     con.commit()
