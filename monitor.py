@@ -10,7 +10,10 @@ from dateutil import parser
 import requests
 
 # local
-from db import Database, Post
+from storage import Database, Post
+
+LOGIN_DETAILS = '/home/matthewd/.ocau-login'
+
 
 
 def perform_login():
@@ -27,13 +30,17 @@ def perform_login():
             vb_login_password           Account password (plaintext)
             s                           No idea (seems to have a random key?)
             do                          Action to perform (always 'login')   """
+
+    login_details = open(LOGIN_DETAILS, 'r').read()
+    (username, password) = login_details.split('#')
+
     url = 'http://forums.overclockers.com.au/login.php?do=login';
     payload = {
         'securitytoken'            : 'guest',
         'vb_login_md5password'     : '',
         'vb_login_md5password_utf' : '',
-        'vb_login_password'        : '',
-        'vb_login_username'        : '',
+        'vb_login_password'        : password,
+        'vb_login_username'        : username,
         's'                        : '',
         'do'                       : 'login',
     }
