@@ -2,18 +2,22 @@
 import os
 import re
 import time
+import datetime
 import traceback
 
 # library
 from bs4 import BeautifulSoup
 from dateutil import parser
 import requests
+import PyRSS2Gen
 
 # local
 from storage import Database, Post
 
-LOGIN_DETAILS = '/home/matthewd/.ocau-login'
 
+LOGIN_DETAILS = '/home/matthewd/.ocau-login'
+RSS_DIRECTORY = '/home/matthewd/code/ocau-rss-py/rss'
+REFRESH_DELAY = 240
 
 
 def perform_login():
@@ -105,6 +109,7 @@ def get_post_details(soup):
         tags = soup.find_all('td', {'class': 'smallfont', 'align': 'right'});
         if len(tags) != 1:
             return None
+        print 'date', tags[0].string, 'parsed', parser.parse(tags[0].string)
         return parser.parse(tags[0].string)
         
     def get_post(soup):
@@ -140,16 +145,54 @@ def get_post_details(soup):
         'title': title,
         'post':  post,
     }
+    
+def update_all_rss_files():
+    database = Database()
+    
+    print 'Writting RSS files'
+    for forum in database.get_forums():
+        write_rss_file(RSS_DIRECTORY + '/' + forum.filename, forum.name, forum.id, entries=25)
+        
+    write_rss_file(RSS_DIRECTORY + '/for_sale_all.rss', 'For Sale: All', None, entries=50)
+
+    
+
+def write_rss_file(dest, title, id_forum = None, entries = 20):
+    database = Database()
+    
+    posts = database.get_posts(id_forum, entries)
+    rss_items = []
+    
+    for post in posts:
+        pubDate = parser.parse(post.date)
+        pubDate += datetime.timedelta(hours=-10) # rss wants GMT time.  this is going to break come DST
+        rss_items.append(PyRSS2Gen.RSSItem(
+            title = post.title,
+            link = post.url,
+            description = post.get_post(),
+            guid = PyRSS2Gen.Guid(post.url),
+            pubDate = pubDate))
+
+    rss = PyRSS2Gen.RSS2(
+        title = title,
+        link = "http://project-2501.net/index.php/ocau-for-sale-rss-feed/",
+        description = "OCAU For Sale RRS Feed",
+        lastBuildDate = datetime.datetime.utcnow(),
+        items=rss_items)
+    
+    print 'Writing:', dest
+    with open(dest, 'w+') as f:
+        rss.write_xml(f)
 
 
 
-
-print 'Starting requests.session'
-session  = perform_login()
 database = Database()
+
 while True:
     try:
         
+        print 'Re-starting requests.session'
+        session  = perform_login()
         for forum in database.get_forums():
             request    = session.get('http://forums.overclockers.com.au/forumdisplay.php?f=' + str(forum.id))
             soup       = BeautifulSoup(request.text);
@@ -161,9 +204,9 @@ while True:
                     # print 'Already fetched post for thread {id}'.format(id=thread_id)
                     continue
                 
-                request      = session.get('http://forums.overclockers.com.au/printthread.php?pp=1&t=' + str(thread_id))
-                soup         = BeautifulSoup(request.text)
-                post_details = get_post_details(soup)
+                request          = session.get('http://forums.overclockers.com.au/printthread.php?pp=1&t=' + str(thread_id))
+                soup             = BeautifulSoup(request.text)
+                post_details     = get_post_details(soup)
                 
                 if post_details is None:
                     print 'Failed gettin post details for thread {id}'.format(id=thread_id)
@@ -176,23 +219,21 @@ while True:
                     name=post_details['name'],
                     title=post_details['title'],
                     post=post_details['post'],
+                    url='http://forums.overclockers.com.au/showthread.php?t=' + str(thread_id),
                 )
                 
                 database.insert_post(p)
                 print 'Saved post {id}'.format(id=thread_id)
 
-        
-        print 'Sleeping for 60 seconds before next check'
-        time.sleep(60)
+        update_all_rss_files()
+        print 'Sleeping for', REFRESH_DELAY, 'seconds before next check'
+        time.sleep(REFRESH_DELAY)
     
     except:
         print 'Exception'
         print '-'*60
         traceback.print_exc(file=os.sys.stdout)
         print '-'*60
-        print 'Sleeping for 60 seconds'
-        time.sleep(60)
-        print 'Re-starting requests.session'
-        session = perform_login()
-        
+        print 'Sleeping for', REFRESH_DELAY, 'seconds'
+        time.sleep(REFRESH_DELAY)
         
