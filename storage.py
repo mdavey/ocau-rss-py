@@ -21,6 +21,9 @@ class Post(object):
         self.title    = title
         self.post     = post
         self.url      = url
+        
+    def get_post(self):
+        return self.post.replace("<img src=\"images/smilies/", "<img src=\"http://forums.overclockers.com.au/images/smilies/")
     
     def __str__(self):
         return 'Post: {title} by {name} {date} ({id})'.format(title=self.title, name=self.name, date=self.date, id=self.id)
@@ -54,9 +57,9 @@ class Database(object):
         cursor = self.con.cursor()
         
         if id_forum is None:
-            cursor.execute('SELECT id, id_forum, date, name, title, post, url FROM posts LIMIT ?', (limit,))
+            cursor.execute('SELECT id, id_forum, date, name, title, post, url FROM posts ORDER BY date DESC LIMIT ?', (limit,))
         else:
-            cursor.execute('SELECT id, id_forum, date, name, title, post, url FROM posts WHERE id_forum=? LIMIT ?', (id_forum, limit,))
+            cursor.execute('SELECT id, id_forum, date, name, title, post, url FROM posts WHERE id_forum=? ORDER BY date DESC LIMIT ?', (id_forum, limit,))
         
         posts = []
         for (id, id_forum, date, name, title, post, url) in cursor.fetchall():
