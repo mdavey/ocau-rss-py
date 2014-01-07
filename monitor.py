@@ -17,13 +17,13 @@ from storage import Database, Post
 
 LOGIN_DETAILS = '/home/matthewd/.ocau-login'
 RSS_DIRECTORY = '/home/matthewd/code/ocau-rss-py/rss'
-REFRESH_DELAY = 240
+REFRESH_DELAY = 180
 
 
 def perform_login():
     """ Post to the login page with my username/password and use
         requests.session to store my cookies for all future requests
-        
+
         Description of keys:
             securitytoken               No idea  (always 'guest')
             vb_login_md5password        rather than post a plain text password
@@ -51,10 +51,10 @@ def perform_login():
 
     session = requests.session()
     req = session.post('http://forums.overclockers.com.au/login.php?do=login', data=payload)
-    
+
     if "Thank you for logging in" not in req.text:
         return None
-    
+
     return session
 
 
@@ -70,7 +70,7 @@ def get_thread_ids(soup):
                 if match is not None:
                     return int(match.group(1))
         return None
-    
+
     def row_is_sticky(row):
         """ Given a row, find all the img tags and check if there is one that
             points to sticky.gif """
@@ -85,25 +85,25 @@ def get_thread_ids(soup):
         thread_id = get_thread_id_for_row(row)
         if (thread_id is not None) and (row_is_sticky(row) == False):
             thread_ids.append(thread_id)
-    
+
     return thread_ids
 
 
 def get_post_details(soup):
     """ Get post details from print preview html page like the below
        - http://forums.overclockers.com.au/printthread.php?t=1025975&pp=1 """
-    
+
     def get_title(soup):
         """ Use the page title as it has state tags.  Though we need to remove
             the prefix """
         return soup.head.title.string.replace('Overclockers Australia Forums - ', '')
-    
+
     def get_name(soup):
         tags = soup.find_all('td', {'style': 'font-size:14pt'})
         if len(tags) != 1:
             return None
         return tags[0].string
-    
+
     def get_datetime(soup):
         """ Use date_util.parser.parse because dates are hard """
         tags = soup.find_all('td', {'class': 'smallfont', 'align': 'right'});
@@ -111,11 +111,11 @@ def get_post_details(soup):
             return None
         print 'date', tags[0].string, 'parsed', parser.parse(tags[0].string)
         return parser.parse(tags[0].string)
-        
+
     def get_post(soup):
         """ There is a single td with the class=page and inside are two divs
             the first has the page title, and the second the post contents
-            
+
             We use renderContents to get all children of the div tag join
             together nicely  (div[1] still has the div tag)"""
         tds = soup.find_all('td', {'class': 'page'})
@@ -123,45 +123,48 @@ def get_post_details(soup):
             return None
         divs = tds[0].find_all('div')
         if len(divs) < 2:
-            return None        
+            return None
         return unicode(divs[1].renderContents(), 'utf-8')
-    
+
     title = get_title(soup)
     name  = get_name(soup)
     date  = get_datetime(soup)
     post  = get_post(soup)
-    
+
     for (i,j) in [('title', title), ('name', name), ('date', date), ('post', post)]:
         if j is None:
-            print 'Could not find {}'.format(i)
+            print 'Could not find title:{title} name:{name}'.format(title=i, name=j)
             return None
-        
+
     if all([title is not None, name is not None, date is not None, post is not None]) == False:
         return None
-    
+
     return {
         'date':  date,
         'name':  name,
         'title': title,
         'post':  post,
     }
-    
+
 def update_all_rss_files():
     database = Database()
-    
+
     print 'Writting RSS files'
     for forum in database.get_forums():
         write_rss_file(RSS_DIRECTORY + '/' + forum.filename, forum.name, forum.id, entries=25)
-        
+
     write_rss_file(RSS_DIRECTORY + '/for_sale_all.rss', 'For Sale: All', None, entries=50)
 
-    
+
 
 def write_rss_file(dest, title, id_forum = None, entries = 20):
     database = Database()
-    
+
     posts = database.get_posts(id_forum, entries)
     rss_items = []
+
+    print "write_rss_file(dest={dest}, title={title}, id_forum={id_forum}, entries={entries})".format(dest=dest, title=title, id_forum=id_forum, entries=entries)
+    print "Number of posts found {count}".format(count=len(posts))
     
     for post in posts:
         pubDate = parser.parse(post.date)
@@ -179,8 +182,8 @@ def write_rss_file(dest, title, id_forum = None, entries = 20):
         description = "OCAU For Sale RRS Feed",
         lastBuildDate = datetime.datetime.utcnow(),
         items=rss_items)
-    
-    print 'Writing:', dest
+
+    # print 'Writing:', dest
     with open(dest, 'w+') as f:
         rss.write_xml(f)
 
@@ -190,28 +193,28 @@ database = Database()
 
 while True:
     try:
-        
+
         print 'Re-starting requests.session'
         session  = perform_login()
         for forum in database.get_forums():
             request    = session.get('http://forums.overclockers.com.au/forumdisplay.php?f=' + str(forum.id))
             soup       = BeautifulSoup(request.text);
             thread_ids = get_thread_ids(soup)
-            
+
             for thread_id in thread_ids:
-                
+
                 if database.get_post(thread_id) is not None:
                     # print 'Already fetched post for thread {id}'.format(id=thread_id)
                     continue
-                
+
                 request          = session.get('http://forums.overclockers.com.au/printthread.php?pp=1&t=' + str(thread_id))
                 soup             = BeautifulSoup(request.text)
                 post_details     = get_post_details(soup)
-                
+
                 if post_details is None:
                     print 'Failed gettin post details for thread {id}'.format(id=thread_id)
                     continue
-                
+
                 p = Post(
                     id=thread_id,
                     id_forum=forum.id,
@@ -221,14 +224,14 @@ while True:
                     post=post_details['post'],
                     url='http://forums.overclockers.com.au/showthread.php?t=' + str(thread_id),
                 )
-                
+
                 database.insert_post(p)
                 print 'Saved post {id}'.format(id=thread_id)
 
         update_all_rss_files()
         print 'Sleeping for', REFRESH_DELAY, 'seconds before next check'
         time.sleep(REFRESH_DELAY)
-    
+
     except:
         print 'Exception'
         print '-'*60
@@ -236,4 +239,3 @@ while True:
         print '-'*60
         print 'Sleeping for', REFRESH_DELAY, 'seconds'
         time.sleep(REFRESH_DELAY)
-        
